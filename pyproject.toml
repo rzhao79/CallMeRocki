@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "callme-rocki"
+version = "0.1.0"
+description = "FastAPI bridge between Recall.ai and the ROC agent"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "httpx>=0.27,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "gTTS>=2.5,<3",
+  "pydantic>=2.7,<3",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["main", "settings"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
