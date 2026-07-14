@@ -51,7 +51,6 @@ def _build_recall_headers(settings: Settings) -> dict[str, str]:
 
 def _build_create_bot_payload(request_body: CreateBotRequest, settings: Settings) -> dict[str, Any]:
     webhook_url = f"{settings.require_public_base_url()}{settings.recall_webhook_path}"
-    language_code = request_body.language_code or settings.transcript_language_code
 
     if not settings.recall_automatic_audio_b64_mp3:
         raise RuntimeError("RECALL_AUTOMATIC_AUDIO_B64_MP3 is required to use Recall output_audio")
@@ -63,8 +62,7 @@ def _build_create_bot_payload(request_body: CreateBotRequest, settings: Settings
             "transcript": {
                 "provider": {
                     "recallai_streaming": {
-                        "mode": "prioritize_low_latency",
-                        "language_code": language_code,
+                         "language_code": "en",
                     }
                 },
                 "diarization": {"use_separate_streams_when_available": True},
