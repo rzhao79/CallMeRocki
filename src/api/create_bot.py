@@ -155,23 +155,86 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
     await _output_audio(str(bot_id), audio_bytes, settings)
 
 
-@router.post("/bot", response_model=CreateBotResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/bot",
+    response_model=CreateBotResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_bot(request_body: CreateBotRequest) -> CreateBotResponse:
     settings = get_settings()
+
     try:
         payload = _build_create_bot_payload(request_body, settings)
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     url = f"{settings.recall_base_url.rstrip('/')}/bot/"
 
     try:
-        response_json = await _post_json(url, _build_recall_headers(settings), payload)
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Recall bot creation failed: {exc}") from exc
+        response_json = await _post_json(
+            url,
+            _build_recall_headers(settings),
+            payload,
+        )
+
+    except httpx.HTTPStatusError as exc:
+        response = exc.response
+
+        try:
+            recall_error = response.json()
+        except ValueError:
+            recall_error = response.text
+
+        # Recall received the request but rejected the payload.
+        if 400 <= response.status_code < 500:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail={
+                    "message": "Recall rejected the bot creation request.",
+                    "recall_error": recall_error,
+                },
+            ) from exc
+
+        # Recall returned an upstream server error.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "Recall failed to create the bot.",
+                "recall_status": response.status_code,
+                "recall_error": recall_error,
+            },
+        ) from exc
+
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Recall timed out while creating the bot.",
+        ) from exc
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to Recall: {exc}",
+        ) from exc
 
     bot_id = str(response_json.get("id", ""))
-    return CreateBotResponse(bot_id=bot_id, response=response_json)
+
+    if not bot_id:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "Recall returned a successful response without a bot ID.",
+                "recall_response": response_json,
+            },
+        )
+
+    return CreateBotResponse(
+        bot_id=bot_id,
+        response=response_json,
+    )
 
 
 @router.post("/webhook", response_model=WebhookAck)
