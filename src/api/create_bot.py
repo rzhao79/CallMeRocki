@@ -152,6 +152,20 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
 
     await _output_audio(str(bot_id), audio_bytes, settings)
 
+async def _get_json(
+    url: str,
+    headers: dict[str, str],
+) -> dict:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=headers)
+
+        if response.is_error:
+            raise RuntimeError(
+                f"Recall returned {response.status_code}: {response.text}"
+            )
+
+        return response.json()
+
 
 @router.post(
     "/bot",
@@ -234,6 +248,15 @@ async def create_bot(request_body: CreateBotRequest) -> CreateBotResponse:
         response=response_json,
     )
 
+@router.get("/bot/{bot_id}")
+async def get_bot(bot_id: str) -> dict:
+    settings = get_settings()
+    url = f"{settings.recall_base_url.rstrip('/')}/bot/{bot_id}/"
+
+    return await _get_json(
+        url,
+        _build_recall_headers(settings),
+    )
 
 @router.post("/webhook", response_model=WebhookAck)
 async def recall_webhook(request: Request, background_tasks: BackgroundTasks) -> WebhookAck:
