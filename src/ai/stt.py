@@ -6,7 +6,7 @@ from collections.abc import Iterable
 def transcript_words_to_text(words: Iterable[object]) -> str:
     pieces: list[str] = []
     for word in words:
-        text = getattr(word, "text", None)
+        text = word.get("text") if isinstance(word, dict) else getattr(word, "text", None)
         if not text:
             continue
         cleaned = str(text).strip()
