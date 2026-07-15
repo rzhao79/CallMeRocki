@@ -17,7 +17,7 @@ from settings import Settings, get_settings
 
 
 router = APIRouter(prefix="/recall", tags=["recall"])
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 class CreateBotRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -134,21 +134,21 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
         return
 
     if event.event != "transcript.data":
-        logger.info("Webhook transcript handler: ignoring event=%s", event.event)
+        logger.warning("Webhook transcript handler: ignoring event=%s", event.event)
         return
 
     data = event.data if isinstance(event.data, dict) else event.data.model_dump()
     transcript_data = data.get("data", {}) if isinstance(data, dict) else {}
     words = transcript_data.get("words", []) if isinstance(transcript_data, dict) else []
     transcript_text = transcript_words_to_text(words)
-    logger.info(
+    logger.warning(
         "Webhook transcript handler: words=%d transcript_chars=%d",
         len(words) if isinstance(words, list) else 0,
         len(transcript_text),
     )
 
     if not transcript_text:
-        logger.info("Webhook transcript handler: empty transcript text, skipping")
+        logger.warning("Webhook transcript handler: empty transcript text, skipping")
         return
 
     roc_response = await ask_roc(transcript_text, settings)
@@ -160,8 +160,9 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
         logger.warning("Webhook transcript handler: missing bot.id in payload")
         return
 
-    logger.info("Webhook transcript handler: sending output audio for bot_id=%s", bot_id)
+    logger.warning("Webhook transcript handler: sending output audio for bot_id=%s", bot_id)
     await _output_audio(str(bot_id), audio_bytes, settings)
+    logger.warning("Webhook transcript handler: output audio sent for bot_id=%s", bot_id)
 
 async def _get_json(
     url: str,
@@ -273,11 +274,18 @@ async def get_bot(bot_id: str) -> dict:
 async def recall_webhook(request: Request, background_tasks: BackgroundTasks) -> WebhookAck:
     settings = get_settings()
     raw_body = await request.body()
+    logger.warning(
+        "Webhook request received: body_bytes=%d verify_recall_requests=%s",
+        len(raw_body),
+        settings.verify_recall_requests,
+    )
 
     if settings.verify_recall_requests:
         try:
             verify_request_from_recall(settings.recall_workspace_verification_secret, request.headers, raw_body)
+            logger.warning("Webhook signature verification: passed")
         except ValueError as exc:
+            logger.warning("Webhook signature verification: failed detail=%s", str(exc))
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     try:
@@ -293,16 +301,16 @@ async def recall_webhook(request: Request, background_tasks: BackgroundTasks) ->
         return WebhookAck(event=None)
 
     event_name = event_payload.get("event")
-    logger.info(
+    logger.warning(
         "Webhook received event=%s payload_keys=%s",
         event_name,
         sorted(event_payload.keys()),
     )
 
     if event_name == "transcript.data":
-        logger.info("Webhook scheduling transcript handler")
+        logger.warning("Webhook scheduling transcript handler")
         background_tasks.add_task(_handle_transcript_event, event_payload, settings)
     else:
-        logger.info("Webhook ignoring unsupported event=%s", event_name)
+        logger.warning("Webhook ignoring unsupported event=%s", event_name)
 
     return WebhookAck(event=event_name)
