@@ -24,3 +24,7 @@ try {
      $_ | Out-String
    }
  }
+
+ Invoke-RestMethod `
+  -Method GET `
+  -Uri "https://YOUR-RENDER-URL/recall/bot/6c5b9e7b-541f-4247-a6bb-0d81cd290b42"

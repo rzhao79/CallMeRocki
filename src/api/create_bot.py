@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 import httpx
@@ -16,7 +17,7 @@ from settings import Settings, get_settings
 
 
 router = APIRouter(prefix="/recall", tags=["recall"])
-
+logger = logging.getLogger(__name__)
 
 class CreateBotRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -129,17 +130,25 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
     try:
         event = RecallRealtimeEvent.model_validate(event_payload)
     except Exception:
+        logger.exception("Webhook transcript handler: event validation failed")
         return
 
     if event.event != "transcript.data":
+        logger.info("Webhook transcript handler: ignoring event=%s", event.event)
         return
 
     data = event.data if isinstance(event.data, dict) else event.data.model_dump()
     transcript_data = data.get("data", {}) if isinstance(data, dict) else {}
     words = transcript_data.get("words", []) if isinstance(transcript_data, dict) else []
     transcript_text = transcript_words_to_text(words)
+    logger.info(
+        "Webhook transcript handler: words=%d transcript_chars=%d",
+        len(words) if isinstance(words, list) else 0,
+        len(transcript_text),
+    )
 
     if not transcript_text:
+        logger.info("Webhook transcript handler: empty transcript text, skipping")
         return
 
     roc_response = await ask_roc(transcript_text, settings)
@@ -148,8 +157,10 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
     bot = data.get("bot", {}) if isinstance(data, dict) else {}
     bot_id = bot.get("id") if isinstance(bot, dict) else None
     if not bot_id:
+        logger.warning("Webhook transcript handler: missing bot.id in payload")
         return
 
+    logger.info("Webhook transcript handler: sending output audio for bot_id=%s", bot_id)
     await _output_audio(str(bot_id), audio_bytes, settings)
 
 async def _get_json(
@@ -274,8 +285,24 @@ async def recall_webhook(request: Request, background_tasks: BackgroundTasks) ->
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    event_name = event_payload.get("event") if isinstance(event_payload, dict) else None
+    if not isinstance(event_payload, dict):
+        logger.warning(
+            "Webhook received non-object payload type=%s",
+            type(event_payload).__name__,
+        )
+        return WebhookAck(event=None)
+
+    event_name = event_payload.get("event")
+    logger.info(
+        "Webhook received event=%s payload_keys=%s",
+        event_name,
+        sorted(event_payload.keys()),
+    )
+
     if event_name == "transcript.data":
+        logger.info("Webhook scheduling transcript handler")
         background_tasks.add_task(_handle_transcript_event, event_payload, settings)
+    else:
+        logger.info("Webhook ignoring unsupported event=%s", event_name)
 
     return WebhookAck(event=event_name)
