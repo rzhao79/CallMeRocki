@@ -18,6 +18,7 @@ from settings import Settings, get_settings
 
 router = APIRouter(prefix="/recall", tags=["recall"])
 logger = logging.getLogger("uvicorn.error")
+TTS_TEST_SCRIPT = "This is a TTS test from Call Me Rocki. If you can hear this, output audio is working."
 
 class CreateBotRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -151,8 +152,10 @@ async def _handle_transcript_event(event_payload: dict[str, Any], settings: Sett
         logger.warning("Webhook transcript handler: empty transcript text, skipping")
         return
 
-    roc_response = await ask_roc(transcript_text, settings)
-    audio_bytes = await synthesize_audio(roc_response, settings)
+    #Fails Here
+    #roc_response = await ask_roc(transcript_text, settings)
+    logger.warning("Webhook transcript handler: synthesizing fixed test script")
+    audio_bytes = await synthesize_audio(TTS_TEST_SCRIPT, settings)
 
     bot = data.get("bot", {}) if isinstance(data, dict) else {}
     bot_id = bot.get("id") if isinstance(bot, dict) else None
